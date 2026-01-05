@@ -19,6 +19,36 @@ const GOOGLE_NATIVE_MIMETYPES = {
   }
 };
 
+// File type aliases for search
+const FILE_TYPE_MAP = {
+  // Google Workspace types
+  'doc': 'application/vnd.google-apps.document',
+  'document': 'application/vnd.google-apps.document',
+  'sheet': 'application/vnd.google-apps.spreadsheet',
+  'spreadsheet': 'application/vnd.google-apps.spreadsheet',
+  'slide': 'application/vnd.google-apps.presentation',
+  'presentation': 'application/vnd.google-apps.presentation',
+  'form': 'application/vnd.google-apps.form',
+  'drawing': 'application/vnd.google-apps.drawing',
+  'folder': 'application/vnd.google-apps.folder',
+  'site': 'application/vnd.google-apps.site',
+  // Common file types
+  'pdf': 'application/pdf',
+  'image': 'image/',
+  'video': 'video/',
+  'audio': 'audio/',
+  'text': 'text/plain',
+  'zip': 'application/zip',
+  'csv': 'text/csv',
+  'json': 'application/json',
+  'html': 'text/html',
+  'xml': 'application/xml',
+  // Microsoft Office
+  'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+};
+
 // Alternative export formats
 const EXPORT_FORMATS = {
   'pdf': 'application/pdf',
@@ -252,6 +282,183 @@ export async function downloadFileById(drive, fileId, localFilePath, format = nu
       })
       .pipe(dest);
   });
+}
+
+/**
+ * Escape special characters in query values
+ */
+function escapeQueryValue(value) {
+  return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+/**
+ * Parse date string to RFC 3339 format for API
+ */
+function parseDate(dateStr) {
+  const date = new Date(dateStr);
+  if (isNaN(date.getTime())) {
+    throw new Error(`Invalid date format: ${dateStr}. Use format: YYYY-MM-DD`);
+  }
+  return date.toISOString();
+}
+
+/**
+ * Parse size string to bytes (e.g., "10MB" -> 10485760)
+ */
+function parseSizeToBytes(sizeStr) {
+  const units = {
+    'B': 1,
+    'KB': 1024,
+    'MB': 1024 * 1024,
+    'GB': 1024 * 1024 * 1024,
+    'TB': 1024 * 1024 * 1024 * 1024
+  };
+
+  const match = sizeStr.toUpperCase().match(/^(\d+(?:\.\d+)?)\s*(B|KB|MB|GB|TB)?$/);
+  if (!match) {
+    throw new Error(`Invalid size format: ${sizeStr}. Use format like "10MB", "500KB", "1GB"`);
+  }
+
+  const value = parseFloat(match[1]);
+  const unit = match[2] || 'B';
+
+  return Math.floor(value * units[unit]);
+}
+
+/**
+ * Filter files by size
+ */
+function filterBySize(files, minSize, maxSize) {
+  const minBytes = minSize ? parseSizeToBytes(minSize) : 0;
+  const maxBytes = maxSize ? parseSizeToBytes(maxSize) : Infinity;
+
+  return files.filter(file => {
+    const size = parseInt(file.size || 0, 10);
+    return size >= minBytes && size <= maxBytes;
+  });
+}
+
+/**
+ * Resolve file type alias to MIME type
+ */
+function resolveMimeType(typeAlias) {
+  const normalized = typeAlias.toLowerCase();
+  if (FILE_TYPE_MAP[normalized]) {
+    return FILE_TYPE_MAP[normalized];
+  }
+  // If not in map, assume it's a raw MIME type
+  if (typeAlias.includes('/')) {
+    return typeAlias;
+  }
+  throw new Error(`Unknown file type: ${typeAlias}. Supported types: ${Object.keys(FILE_TYPE_MAP).join(', ')}`);
+}
+
+/**
+ * Build Google Drive search query from options
+ * @param {object} options - Search options
+ * @returns {string} - Google Drive API query string
+ */
+export function buildSearchQuery(options) {
+  const queryParts = [];
+
+  // Default: exclude trashed unless explicitly requested
+  if (options.trashed) {
+    queryParts.push('trashed=true');
+  } else {
+    queryParts.push('trashed=false');
+  }
+
+  // Name contains
+  if (options.name) {
+    queryParts.push(`name contains '${escapeQueryValue(options.name)}'`);
+  }
+
+  // Full text search (searches content)
+  if (options.fullText) {
+    queryParts.push(`fullText contains '${escapeQueryValue(options.fullText)}'`);
+  }
+
+  // File type
+  if (options.type) {
+    const mimeType = resolveMimeType(options.type);
+    if (mimeType.endsWith('/')) {
+      // Prefix match for categories like image/, video/
+      queryParts.push(`mimeType contains '${mimeType}'`);
+    } else {
+      queryParts.push(`mimeType='${mimeType}'`);
+    }
+  }
+
+  // Parent folder
+  if (options.parent) {
+    queryParts.push(`'${options.parent}' in parents`);
+  }
+
+  // Date filters
+  if (options.after) {
+    const date = parseDate(options.after);
+    queryParts.push(`modifiedTime>'${date}'`);
+  }
+  if (options.before) {
+    const date = parseDate(options.before);
+    queryParts.push(`modifiedTime<'${date}'`);
+  }
+
+  // Owner filter
+  if (options.owner) {
+    queryParts.push(`'${escapeQueryValue(options.owner)}' in owners`);
+  }
+
+  // Starred
+  if (options.starred) {
+    queryParts.push('starred=true');
+  }
+
+  // Sharing filters
+  if (options.sharedWithMe) {
+    queryParts.push('sharedWithMe=true');
+  }
+
+  return queryParts.join(' and ');
+}
+
+/**
+ * Search files in Google Drive
+ * @param {object} drive - Drive API client
+ * @param {object} options - Search options
+ * @returns {Array} - List of matching files
+ */
+export async function searchFiles(drive, options) {
+  const query = buildSearchQuery(options);
+  const limit = options.limit || 50;
+  const orderBy = options.orderBy || 'modifiedTime desc';
+
+  let allFiles = [];
+  let pageToken = null;
+
+  do {
+    const response = await drive.files.list({
+      q: query,
+      fields: 'nextPageToken, files(id, name, mimeType, size, modifiedTime, webViewLink, owners, starred, shared)',
+      orderBy: orderBy,
+      pageSize: Math.min(limit - allFiles.length, 100),
+      pageToken: pageToken,
+      spaces: 'drive',
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true
+    });
+
+    allFiles = allFiles.concat(response.data.files);
+    pageToken = response.data.nextPageToken;
+
+  } while (pageToken && allFiles.length < limit);
+
+  // Post-process for size filtering (API doesn't support size queries)
+  if (options.minSize || options.maxSize) {
+    allFiles = filterBySize(allFiles, options.minSize, options.maxSize);
+  }
+
+  return allFiles.slice(0, limit);
 }
 
 /**

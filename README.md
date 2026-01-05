@@ -10,6 +10,7 @@ A command-line interface for Google Drive.
 - 📥 Download files from Google Drive (by path or ID)
 - 📄 Export Google Docs/Sheets/Slides to various formats
 - 📂 List files and folders
+- 🔍 Advanced search with filters (type, date, owner, size, etc.)
 - 🎨 Beautiful colored output with chalk
 - ⚡ Loading spinners with ora
 
@@ -222,6 +223,100 @@ gdrive file export 1xyz789ghi012 ./spreadsheet.pdf --format pdf
 | `md`   | Markdown | Google Docs |
 | `html` | HTML | Google Docs |
 | `csv`  | CSV | Google Sheets |
+
+#### Search files
+
+Search for files in Google Drive with powerful filters.
+
+```bash
+# Basic full-text search (searches name and content)
+gdrive file search "quarterly report"
+
+# Search by file name
+gdrive file search --name "budget"
+
+# Search by file type
+gdrive file search --type doc          # Google Docs
+gdrive file search --type sheet        # Google Sheets
+gdrive file search --type slide        # Google Slides
+gdrive file search --type folder       # Folders only
+gdrive file search --type pdf          # PDF files
+gdrive file search --type image        # All images
+
+# Filter by date
+gdrive file search --after 2024-01-01
+gdrive file search --before 2024-12-31
+gdrive file search --after 2024-01-01 --before 2024-06-30
+
+# Filter by owner
+gdrive file search --owner "colleague@gmail.com"
+
+# Filter by size
+gdrive file search --min-size 10MB
+gdrive file search --max-size 100MB
+gdrive file search --min-size 1MB --max-size 50MB
+
+# Special filters
+gdrive file search --starred           # Starred files only
+gdrive file search --shared-with-me    # Files shared with me
+gdrive file search --trashed           # Search in trash
+
+# Search in specific folder (by folder ID)
+gdrive file search --parent 1abc123def456
+
+# Combine multiple filters
+gdrive file search --type doc --starred --after 2024-01-01
+gdrive file search --type sheet --owner "team@company.com" --name "budget"
+
+# Limit results and sort
+gdrive file search --type pdf --limit 10
+gdrive file search --type doc --order-by name
+
+# JSON output for scripting
+gdrive file search --type folder --json
+gdrive file search "report" --json | jq '.[].id'
+```
+
+**Supported file types:**
+
+| Alias | Description |
+|-------|-------------|
+| `doc`, `document` | Google Docs |
+| `sheet`, `spreadsheet` | Google Sheets |
+| `slide`, `presentation` | Google Slides |
+| `folder` | Folders |
+| `form` | Google Forms |
+| `drawing` | Google Drawings |
+| `pdf` | PDF files |
+| `image` | All image types |
+| `video` | All video types |
+| `audio` | All audio types |
+| `text` | Plain text files |
+| `csv` | CSV files |
+| `json` | JSON files |
+| `docx`, `xlsx`, `pptx` | Microsoft Office |
+
+**Search options reference:**
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--type <type>` | `-t` | File type filter |
+| `--name <pattern>` | `-n` | Name contains pattern |
+| `--parent <id>` | `-p` | Files in specific folder |
+| `--after <date>` | | Modified after date (YYYY-MM-DD) |
+| `--before <date>` | | Modified before date (YYYY-MM-DD) |
+| `--owner <email>` | `-o` | Files owned by email |
+| `--min-size <size>` | | Minimum file size (e.g., 10MB) |
+| `--max-size <size>` | | Maximum file size (e.g., 1GB) |
+| `--shared` | | Only shared/public files |
+| `--not-shared` | | Only private files |
+| `--shared-with-me` | | Files shared with me |
+| `--starred` | | Only starred files |
+| `--trashed` | | Search in trash |
+| `--full-text <text>` | `-f` | Full-text content search |
+| `--limit <n>` | `-l` | Max results (default: 50) |
+| `--order-by <field>` | | Sort by: name, modifiedTime |
+| `--json` | | Output as JSON |
 
 ## Examples
 
