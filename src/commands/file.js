@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { getAuthClient } from '../lib/auth.js';
-import { getDriveClient, uploadFile, listFiles, downloadFile, downloadFileById, formatSize, formatDate } from '../lib/drive.js';
+import { getDriveClient, uploadFile, listFiles, downloadFile, downloadFileById, searchFiles, formatSize, formatDate } from '../lib/drive.js';
 import chalk from 'chalk';
 import ora from 'ora';
 
@@ -178,6 +178,91 @@ fileCommand
         console.error(chalk.red('Error:'), 'File not found in Google Drive');
       } else if (error.message.includes('Unknown export format')) {
         console.error(chalk.red('Error:'), error.message);
+      } else {
+        console.error(chalk.red('Error:'), error.message);
+      }
+      process.exit(1);
+    }
+  });
+
+// Search command
+fileCommand
+  .command('search')
+  .description('Search for files in Google Drive')
+  .argument('[query]', 'Free-text search query (searches name and content)')
+  .option('-t, --type <type>', 'File type (doc, sheet, slide, folder, pdf, image, etc.)')
+  .option('-n, --name <pattern>', 'File name contains pattern')
+  .option('-p, --parent <id>', 'Parent folder ID')
+  .option('--after <date>', 'Modified after date (YYYY-MM-DD)')
+  .option('--before <date>', 'Modified before date (YYYY-MM-DD)')
+  .option('-o, --owner <email>', 'Owner email address')
+  .option('--min-size <size>', 'Minimum file size (e.g., 10MB)')
+  .option('--max-size <size>', 'Maximum file size (e.g., 1GB)')
+  .option('--shared', 'Only shared/public files')
+  .option('--not-shared', 'Only private files')
+  .option('--shared-with-me', 'Files shared with me')
+  .option('--starred', 'Only starred files')
+  .option('--trashed', 'Search in trash')
+  .option('-f, --full-text <text>', 'Full-text content search')
+  .option('-l, --limit <n>', 'Maximum results (default: 50)', '50')
+  .option('--order-by <field>', 'Sort by field (name, modifiedTime, etc.)')
+  .option('--json', 'Output in JSON format')
+  .action(async (query, options) => {
+    try {
+      const spinner = ora('Searching files...').start();
+
+      const auth = await getAuthClient();
+      const drive = await getDriveClient(auth);
+
+      // Merge positional query into options
+      const searchOptions = {
+        ...options,
+        fullText: query || options.fullText,
+        limit: parseInt(options.limit, 10)
+      };
+
+      const files = await searchFiles(drive, searchOptions);
+
+      spinner.stop();
+
+      if (options.json) {
+        console.log(JSON.stringify(files, null, 2));
+      } else {
+        if (files.length === 0) {
+          console.log(chalk.yellow('No files found matching your criteria'));
+          return;
+        }
+
+        console.log(chalk.bold(`\nFound ${files.length} file(s):\n`));
+
+        files.forEach(file => {
+          const isFolder = file.mimeType === 'application/vnd.google-apps.folder';
+          const icon = isFolder ? '📁' : '📄';
+          const size = isFolder ? '' : ` (${formatSize(file.size)})`;
+          const starred = file.starred ? ' ⭐' : '';
+          const shared = file.shared ? ' 🔗' : '';
+
+          console.log(`${icon} ${chalk.bold(file.name)}${size}${starred}${shared}`);
+          console.log(`   ID: ${file.id}`);
+          console.log(`   Modified: ${formatDate(file.modifiedTime)}`);
+          if (file.owners && file.owners.length > 0) {
+            console.log(`   Owner: ${file.owners[0].emailAddress}`);
+          }
+          console.log(`   Link: ${file.webViewLink}`);
+          console.log();
+        });
+
+        console.log(chalk.gray(`Total: ${files.length} result(s)`));
+      }
+    } catch (error) {
+      if (error.message.includes('Invalid date')) {
+        console.error(chalk.red('Error:'), error.message);
+      } else if (error.message.includes('Unknown file type')) {
+        console.error(chalk.red('Error:'), error.message);
+      } else if (error.message.includes('Invalid size')) {
+        console.error(chalk.red('Error:'), error.message);
+      } else if (error.code === 400) {
+        console.error(chalk.red('Error:'), 'Invalid search query');
       } else {
         console.error(chalk.red('Error:'), error.message);
       }
