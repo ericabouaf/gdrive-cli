@@ -10,7 +10,7 @@ const program = new Command();
 program
   .name('gdrive')
   .description('Google Drive CLI tool')
-  .version('1.0.0')
+  .version('1.3.0')
   .option('--profile <name>', 'Profile to use', 'default');
 
 // Set profile before any command runs
