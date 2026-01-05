@@ -7,7 +7,8 @@ A command-line interface for Google Drive.
 - 🔐 OAuth2 authentication
 - 👥 Multi-profile support (multiple Gdrive accounts)
 - 📤 Upload files to Google Drive
-- 📥 Download files from Google Drive
+- 📥 Download files from Google Drive (by path or ID)
+- 📄 Export Google Docs/Sheets/Slides to various formats
 - 📂 List files and folders
 - 🎨 Beautiful colored output with chalk
 - ⚡ Loading spinners with ora
@@ -149,7 +150,7 @@ gdrive file ls "Work/Reports"
 gdrive file ls "Documents" --json
 ```
 
-#### Download files
+#### Download files by path
 
 ```bash
 # Download file from root
@@ -161,6 +162,66 @@ gdrive file get "Work/Reports/Q1.pdf" "./Q1-report.pdf"
 # Download with JSON output
 gdrive file get "data.csv" "./data.csv" --json
 ```
+
+#### Export files by ID
+
+Use `export` when you have the Google Drive file ID (useful for shared links or API integrations).
+
+```bash
+# Download a regular file (PDF, image, etc.)
+gdrive file export 1v4wlXvI_i8BCJZtBlxjHi3YJyOfebZGuqevq8cGcG2k ./output.pdf
+```
+
+**Google Workspace files** (Docs, Sheets, Slides) are automatically exported to their Office equivalent:
+
+| Google Format | Default Export |
+|---------------|----------------|
+| Google Docs   | `.docx`        |
+| Google Sheets | `.xlsx`        |
+| Google Slides | `.pptx`        |
+
+```bash
+# Export a Google Doc to docx (automatic)
+gdrive file export 1abc123def456 ./document.docx
+
+# Export a Google Sheet to xlsx (automatic)
+gdrive file export 1xyz789ghi012 ./spreadsheet.xlsx
+```
+
+**Custom export formats** with `--format`:
+
+```bash
+# Export Google Doc as PDF
+gdrive file export 1abc123def456 ./document.pdf --format pdf
+
+# Export Google Doc as plain text
+gdrive file export 1abc123def456 ./document.txt --format txt
+
+# Export Google Doc as HTML
+gdrive file export 1abc123def456 ./document.html --format html
+
+# Export Google Doc as Markdown
+gdrive file export 1abc123def456 ./document.md --format md
+
+# Export Google Sheet as CSV
+gdrive file export 1xyz789ghi012 ./data.csv --format csv
+
+# Export Google Sheet as PDF
+gdrive file export 1xyz789ghi012 ./spreadsheet.pdf --format pdf
+```
+
+**Supported export formats:**
+
+| Format | MIME Type | Best for |
+|--------|-----------|----------|
+| `pdf`  | application/pdf | Universal sharing |
+| `docx` | Word document | Google Docs |
+| `xlsx` | Excel spreadsheet | Google Sheets |
+| `pptx` | PowerPoint presentation | Google Slides |
+| `txt`  | Plain text | Google Docs |
+| `md`   | Markdown | Google Docs |
+| `html` | HTML | Google Docs |
+| `csv`  | CSV | Google Sheets |
 
 ## Examples
 
@@ -185,6 +246,19 @@ gdrive file ls "Work/Reports"
 
 # Step 2: Download the file
 gdrive file get "Work/Reports/Q1.pdf" "./Q1.pdf"
+```
+
+### Export by ID Workflow
+
+```bash
+# Step 1: List directory to get the file ID
+gdrive file ls "Documents" --json | jq '.[] | {name, id}'
+
+# Step 2: Export using the ID
+gdrive file export 1abc123def456 ./document.docx
+
+# Or export a Google Doc to PDF
+gdrive file export 1abc123def456 ./document.pdf --format pdf
 ```
 
 ### Organize Files by Project
@@ -241,6 +315,8 @@ File paths in Google Drive are specified using forward slashes:
 - Files larger than 5TB cannot be uploaded (Google Drive API limit)
 - Folder paths must exist before uploading (folders are not created automatically)
 - Downloaded files overwrite existing local files without warning
+- Google Workspace files (Docs, Sheets, Slides) can only be downloaded via `export` (not `get`)
+- Export size limits apply to Google Workspace files (10MB for most exports, 100 sheets for spreadsheets)
 
 ## Troubleshooting
 
