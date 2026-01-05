@@ -3,6 +3,34 @@ import fs from 'fs';
 import path from 'path';
 import mime from 'mime-types';
 
+// Google Workspace native mimeTypes and their default export formats
+const GOOGLE_NATIVE_MIMETYPES = {
+  'application/vnd.google-apps.document': {
+    defaultExport: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    defaultExt: '.docx'
+  },
+  'application/vnd.google-apps.spreadsheet': {
+    defaultExport: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    defaultExt: '.xlsx'
+  },
+  'application/vnd.google-apps.presentation': {
+    defaultExport: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    defaultExt: '.pptx'
+  }
+};
+
+// Alternative export formats
+const EXPORT_FORMATS = {
+  'pdf': 'application/pdf',
+  'txt': 'text/plain',
+  'html': 'text/html',
+  'md': 'text/markdown',
+  'csv': 'text/csv',
+  'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+};
+
 /**
  * Get Drive API client
  */
@@ -150,6 +178,74 @@ export async function downloadFile(drive, driveFilePath, localFilePath) {
     fileResponse.data
       .on('end', () => {
         resolve(file);
+      })
+      .on('error', err => {
+        reject(err);
+      })
+      .pipe(dest);
+  });
+}
+
+/**
+ * Download a file by its Google Drive ID
+ * @param {object} drive - Drive API client
+ * @param {string} fileId - Google Drive file ID
+ * @param {string} localFilePath - Local destination path
+ * @param {string} [format] - Optional export format (pdf, txt, html, csv, docx, xlsx, pptx)
+ * @returns {object} - File metadata with download info
+ */
+export async function downloadFileById(drive, fileId, localFilePath, format = null) {
+  // Get file metadata to determine mimeType
+  const metadataResponse = await drive.files.get({
+    fileId: fileId,
+    fields: 'id, name, mimeType, size'
+  });
+
+  const file = metadataResponse.data;
+  const isGoogleNative = GOOGLE_NATIVE_MIMETYPES.hasOwnProperty(file.mimeType);
+
+  const dest = fs.createWriteStream(localFilePath);
+
+  let fileResponse;
+  let exportMimeType = null;
+
+  if (isGoogleNative) {
+    // Google native file - needs export
+    if (format) {
+      // User specified a format
+      exportMimeType = EXPORT_FORMATS[format.toLowerCase()];
+      if (!exportMimeType) {
+        throw new Error(`Unknown export format: ${format}. Supported formats: ${Object.keys(EXPORT_FORMATS).join(', ')}`);
+      }
+    } else {
+      // Use default export format based on file type
+      exportMimeType = GOOGLE_NATIVE_MIMETYPES[file.mimeType].defaultExport;
+    }
+
+    fileResponse = await drive.files.export(
+      { fileId: fileId, mimeType: exportMimeType },
+      { responseType: 'stream' }
+    );
+  } else {
+    // Regular file - direct download
+    if (format) {
+      console.warn(`Warning: --format option is ignored for non-Google native files`);
+    }
+
+    fileResponse = await drive.files.get(
+      { fileId: fileId, alt: 'media' },
+      { responseType: 'stream' }
+    );
+  }
+
+  return new Promise((resolve, reject) => {
+    fileResponse.data
+      .on('end', () => {
+        resolve({
+          ...file,
+          exported: isGoogleNative,
+          exportMimeType: exportMimeType
+        });
       })
       .on('error', err => {
         reject(err);

@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { getAuthClient } from '../lib/auth.js';
-import { getDriveClient, uploadFile, listFiles, downloadFile, formatSize, formatDate } from '../lib/drive.js';
+import { getDriveClient, uploadFile, listFiles, downloadFile, downloadFileById, formatSize, formatDate } from '../lib/drive.js';
 import chalk from 'chalk';
 import ora from 'ora';
 
@@ -129,6 +129,55 @@ fileCommand
     } catch (error) {
       if (error.message.includes('not found')) {
         console.error(chalk.red('Error:'), 'File or folder not found in Google Drive');
+      } else {
+        console.error(chalk.red('Error:'), error.message);
+      }
+      process.exit(1);
+    }
+  });
+
+// Export command (download by ID)
+fileCommand
+  .command('export')
+  .description('Export/download a file from Google Drive by its ID')
+  .argument('<fileId>', 'Google Drive file ID')
+  .argument('<localPath>', 'Local destination path')
+  .option('--format <format>', 'Export format for Google Docs (pdf, txt, html, md, csv, docx, xlsx, pptx)')
+  .option('--json', 'Output in JSON format')
+  .action(async (fileId, localPath, options) => {
+    try {
+      const spinner = ora('Downloading file...').start();
+
+      const auth = await getAuthClient();
+      const drive = await getDriveClient(auth);
+
+      const file = await downloadFileById(drive, fileId, localPath, options.format);
+
+      spinner.succeed('File downloaded successfully');
+
+      if (options.json) {
+        console.log(JSON.stringify({
+          name: file.name,
+          id: file.id,
+          mimeType: file.mimeType,
+          localPath: localPath,
+          exported: file.exported,
+          exportMimeType: file.exportMimeType
+        }, null, 2));
+      } else {
+        console.log(chalk.bold('\nDownload Complete:'));
+        console.log(`File: ${file.name}`);
+        console.log(`ID: ${file.id}`);
+        console.log(`Saved to: ${localPath}`);
+        if (file.exported) {
+          console.log(`Exported as: ${file.exportMimeType}`);
+        }
+      }
+    } catch (error) {
+      if (error.code === 404 || error.message.includes('not found')) {
+        console.error(chalk.red('Error:'), 'File not found in Google Drive');
+      } else if (error.message.includes('Unknown export format')) {
+        console.error(chalk.red('Error:'), error.message);
       } else {
         console.error(chalk.red('Error:'), error.message);
       }
